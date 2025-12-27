@@ -1,0 +1,8 @@
+.west/
+zephyr/
+modules/
+tools/
+bootloader/
+build/
+**/build/
+**/.cache/

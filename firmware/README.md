@@ -13,8 +13,8 @@
 
 ```bash
 # Ubuntu
-sudo apt install -y python3-pip cmake ninja-build device-tree-compiler dfu-util
-sudo install --break-system-packages west pyelftools  # python は venv をつかってもよい
+sudo apt install -y python3-pip cmake ninja-build device-tree-compiler dfu-util teensy-loader-cli
+sudo pip install --break-system-packages west pyelftools  # python は venv をつかってもよい
 ```
 
 ### Zephyr SDK のインストール
@@ -65,6 +65,43 @@ west build -b teensy41 apps/integrated-data-logger -p auto -DCMAKE_EXPORT_COMPIL
 成功すると： `firmware/build/zephyr/zephyr.hex` が生成される。
 
 ### 書き込み（Teensy 4.1）
+
+#### WSL を使用する場合の準備
+
+1. Windows に `usbipd-win` をインストールする。
+2. Windows 側： USB デバイスの確認
+
+   **管理者 PowerShell** を起動して以下を実行
+
+   ```powershell
+   > usbipd list
+   BUSID  VID:PID    DEVICE
+   3-5    16c0:0478  USB Input Device
+   ```
+
+   `VID:PID = 16c0:0478` が Teensy（HalfKay Bootloader）である。
+
+3. Windows -> WSL に USB をアタッチ
+
+   ```powershell
+   usbipd attach --wsl --busid 3-5 --auto-attach # BUSID は usbipd list の結果に合わせる
+   ```
+
+   を実行して、 Teensy の boot ボタンを一回押す。
+
+   WSL 側で
+
+   ```bash
+   lsusb
+   ```
+
+   を実行して、以下のように表示されれば、WSL から書き込める。
+
+   ```bash
+    ID 16c0:0478 Van Ooijen Technische Informatica Teensy Halfkay Bootloader
+   ```
+
+#### 書き込み
 
 ```bash
 cd firmware

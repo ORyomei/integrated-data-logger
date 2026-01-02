@@ -107,3 +107,35 @@ west build -b teensy41 apps/integrated-data-logger -p auto -DCMAKE_EXPORT_COMPIL
 cd firmware
 sudo west flash
 ```
+
+## ハードウェア仕様
+
+### ADS8688 アナログ入力 (8チャンネル)
+
+- 入力範囲: ±10V
+- サンプリング周波数: 10kHz
+- インターフェース: SPI (LPSPI3)
+
+### 60Hz 矩形波出力
+
+- 出力ピン: GPIO1_0 (Teensy Pin 19)
+- 周波数: 60Hz (50% デューティサイクル)
+
+### ピンアサイン
+
+#### SPI (LPSPI3) - ADS8688接続
+
+| 機能 | Teensy ピン | 信号名 | 接続先 |
+|------|-----------|--------|--------|
+| MISO | **39** | SDI | ADS8688 SDO |
+| MOSI | **26** | SDO | ADS8688 SDI |
+| SCK  | **27** | SCK | ADS8688 SCLK |
+| CS   | **38** (または GPIO2_11) | PCS0 | ADS8688 CS |
+
+> **注**: CS (Chip Select) はオーバーレイ設定で`GPIO2_11`を使用しています。標準のピン38を使う場合は、デバイスツリーオーバーレイの`cs-gpios`行を削除してハードウェアCSを使用してください。
+
+#### GPIO出力
+
+| 機能 | ピン | 説明 |
+|------|------|------|
+| 60Hz矩形波出力 | **19** | GPIO1_0 による60Hz信号出力 |

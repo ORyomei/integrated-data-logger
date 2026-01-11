@@ -139,3 +139,97 @@ sudo west flash
 | 機能 | ピン | 説明 |
 |------|------|------|
 | 60Hz矩形波出力 | **19** | GPIO1_0 による60Hz信号出力 |
+
+## Ethernet通信設定
+
+### ネットワーク構成
+
+Teensy 4.1の内蔵Ethernetポート（SparkFun Ethernet Adapter対応）を使用してデータを送信します。
+
+- **プロトコル**: UDP
+- **ポート**: 8888
+- **データレート**: 100Hz (10ms間隔)
+- **データ形式**: CSV (timestamp_ms,ch0,ch1,...,ch7)
+
+### PCのIPアドレス設定
+
+[main.c](apps/integrated-data-logger/src/main.c)の以下の行を編集してPCのIPアドレスを設定:
+
+```c
+#define UDP_DEST_ADDR       "192.168.1.100"  // PC のIPアドレス
+```
+
+### ネットワーク接続
+
+1. Teensy 4.1とPCを同じネットワークに接続
+2. DHCPでTeensyに自動的にIPアドレスが割り当てられます
+3. 起動後、ログでTeensyのIPアドレスを確認できます
+
+### PCでのデータ受信
+
+#### Python スクリプト例
+
+```python
+import socket
+
+UDP_IP = "0.0.0.0"  # すべてのインターフェースで受信
+UDP_PORT = 8888
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind((UDP_IP, UDP_PORT))
+
+print(f"Listening on UDP port {UDP_PORT}...")
+
+# CSVヘッダー
+print("timestamp_ms,ch0,ch1,ch2,ch3,ch4,ch5,ch6,ch7")
+
+while True:
+    data, addr = sock.recvfrom(1024)
+    print(data.decode('utf-8').strip())
+```
+
+#### ファイルへの保存
+
+```python
+import socket
+from datetime import datetime
+
+UDP_IP = "0.0.0.0"
+UDP_PORT = 8888
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind((UDP_IP, UDP_PORT))
+
+filename = f"adc_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+with open(filename, 'w') as f:
+    f.write("timestamp_ms,ch0,ch1,ch2,ch3,ch4,ch5,ch6,ch7\n")
+    
+    print(f"Recording to {filename}... (Ctrl+C to stop)")
+    
+    try:
+        while True:
+            data, addr = sock.recvfrom(1024)
+            f.write(data.decode('utf-8'))
+            f.flush()
+    except KeyboardInterrupt:
+        print(f"\nData saved to {filename}")
+```
+
+#### Linux コマンドライン
+
+```bash
+# netcat でデータ受信
+nc -ul 8888
+
+# ファイルに保存
+nc -ul 8888 > adc_data.csv
+```
+
+### 電圧値への変換
+
+ADS8688の生データ（±32768）を電圧値（±10V）に変換:
+
+```python
+voltage = (adc_value / 32768.0) * 10.0  # V
+```

@@ -34,11 +34,10 @@ static const struct device ads8688_dev = {
 #define SAMPLING_PERIOD_US  (1000000 / SAMPLING_FREQ_HZ)  /* 100us */
 #define NUM_CHANNELS        8
 
-/* UDP configuration */
-#define UDP_PORT            8888
-#define UDP_DEST_ADDR       "192.168.0.242"  // PC のIPアドレス
-static int udp_sock = -1;
-static struct sockaddr_in dest_addr;
+/* TCP configuration */
+#define TCP_PORT            8888
+static int tcp_server_sock = -1;
+static int tcp_client_sock = -1;
 
 /* Data buffers */
 static int16_t adc_buffer[NUM_CHANNELS];
@@ -66,20 +65,44 @@ static void net_event_handler(struct net_mgmt_event_callback *cb,
     }
 }
 
-static int setup_udp_socket(void)
+static int setup_tcp_server(void)
 {
-    udp_sock = zsock_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (udp_sock < 0) {
-        LOG_ERR("Failed to create UDP socket: %d", errno);
+    struct sockaddr_in bind_addr;
+    int ret;
+    
+    /* Create TCP socket */
+    tcp_server_sock = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (tcp_server_sock < 0) {
+        LOG_ERR("Failed to create TCP socket: %d", errno);
         return -errno;
     }
     
-    memset(&dest_addr, 0, sizeof(dest_addr));
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(UDP_PORT);
-    zsock_inet_pton(AF_INET, UDP_DEST_ADDR, &dest_addr.sin_addr);
+    /* Enable SO_REUSEADDR */
+    int reuse = 1;
+    zsock_setsockopt(tcp_server_sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     
-    LOG_INF("UDP socket created, will send to %s:%d", UDP_DEST_ADDR, UDP_PORT);
+    /* Bind to port */
+    memset(&bind_addr, 0, sizeof(bind_addr));
+    bind_addr.sin_family = AF_INET;
+    bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    bind_addr.sin_port = htons(TCP_PORT);
+    
+    ret = zsock_bind(tcp_server_sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr));
+    if (ret < 0) {
+        LOG_ERR("Failed to bind TCP socket: %d", errno);
+        zsock_close(tcp_server_sock);
+        return -errno;
+    }
+    
+    /* Listen for connections */
+    ret = zsock_listen(tcp_server_sock, 1);
+    if (ret < 0) {
+        LOG_ERR("Failed to listen on TCP socket: %d", errno);
+        zsock_close(tcp_server_sock);
+        return -errno;
+    }
+    
+    LOG_INF("TCP server listening on port %d", TCP_PORT);
     return 0;
 }
 
@@ -151,16 +174,35 @@ void data_logging_thread(void *p1, void *p2, void *p3)
     
     LOG_INF("Data logging thread started");
     
-    /* Wait for UDP socket to be ready */
+    /* Wait for TCP server to be ready */
     k_sleep(K_SECONDS(2));
     
     char buf[256];
     int len;
     int counter = 0;
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
     
     while (1) {
-        /* Send data every 100ms (10Hz for testing) */
-        k_sleep(K_MSEC(100));
+        /* Wait for client connection */
+        if (tcp_client_sock < 0) {
+            LOG_INF("Waiting for TCP client connection...");
+            tcp_client_sock = zsock_accept(tcp_server_sock, 
+                                          (struct sockaddr *)&client_addr,
+                                          &client_addr_len);
+            if (tcp_client_sock < 0) {
+                LOG_ERR("Failed to accept connection: %d", errno);
+                k_sleep(K_SECONDS(1));
+                continue;
+            }
+            
+            char client_ip[NET_IPV4_ADDR_LEN];
+            zsock_inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+            LOG_INF("Client connected from %s:%d", client_ip, ntohs(client_addr.sin_port));
+        }
+        
+        /* Send data every 10ms (100Hz) */
+        k_sleep(K_MSEC(10));
         
         /* Generate dummy data - sine wave pattern */
         for (int i = 0; i < NUM_CHANNELS; i++) {
@@ -174,12 +216,14 @@ void data_logging_thread(void *p1, void *p2, void *p3)
                       adc_buffer[0], adc_buffer[1], adc_buffer[2], adc_buffer[3],
                       adc_buffer[4], adc_buffer[5], adc_buffer[6], adc_buffer[7]);
         
-        /* Send via UDP */
-        if (udp_sock >= 0) {
-            int ret = zsock_sendto(udp_sock, buf, len, 0,
-                           (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        /* Send via TCP */
+        if (tcp_client_sock >= 0) {
+            int ret = zsock_send(tcp_client_sock, buf, len, 0);
             if (ret < 0) {
-                LOG_ERR("Failed to send UDP packet: %d", errno);
+                LOG_ERR("Failed to send TCP data: %d, closing connection", errno);
+                zsock_close(tcp_client_sock);
+                tcp_client_sock = -1;
+                continue;
             }
         }
         
@@ -254,17 +298,22 @@ int main(void)
     /* LED on = network ready */
     gpio_pin_set(led_dev, STATUS_LED_PIN, 1);
     
-    /* Setup UDP socket */
-    ret = setup_udp_socket();
+    /* Setup TCP server */
+    ret = setup_tcp_server();
     if (ret < 0) {
-        LOG_WRN("UDP socket setup failed, will continue without network");
+        LOG_ERR("TCP server setup failed");
+        /* Fast blink = error */
+        while (1) {
+            gpio_pin_toggle(led_dev, STATUS_LED_PIN);
+            k_sleep(K_MSEC(100));
+        }
     }
     
     /* Skip ADS8688 and GPIO initialization for testing */
     LOG_INF("Skipping ADS8688 initialization for network testing");
     
     LOG_INF("System initialized successfully (network only)");
-    LOG_INF("UDP streaming to %s:%d at 100Hz", UDP_DEST_ADDR, UDP_PORT);
+    LOG_INF("TCP server listening on port %d", TCP_PORT);
     
     /* Main thread - blink LED every 2 seconds to show we're running */
     while (1) {

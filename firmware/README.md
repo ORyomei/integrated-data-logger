@@ -34,6 +34,15 @@ echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
 
+
+```bash
+cd ~
+wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/zephyr-sdk-0.17.4_linux-aarch64.tar.xz
+tar xf zephyr-sdk-0.17.4_linux-aarch64.tar.xz
+cd zephyr-sdk-0.17.4
+
+```
+
 ### 初回セットアップ
 
 注）`firmware/apps` で実行すること

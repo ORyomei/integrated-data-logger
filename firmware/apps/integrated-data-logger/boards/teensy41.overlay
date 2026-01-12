@@ -17,6 +17,15 @@
 	};
 };
 
+/* Avoid wrong reset/interrupt handling for PHY; rely on MDIO polling/reset */
+&enet_mdio {
+	phy: phy@0 {
+		/delete-property/ reset-gpios;
+		/delete-property/ int-gpios;
+	};
+};
+
+
 &gpio1 {
 	status = "okay";
 };

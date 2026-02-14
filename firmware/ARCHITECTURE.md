@@ -4,6 +4,7 @@
 
 Teensy 4.1 上で動作する 8ch アナログデータロガー。
 外付け ADC (TI ADS8688) から 1kHz で 8ch ±10V のアナログ値を取得し、CSV 形式で USB CDC (Serial) に出力する。
+同時に GPIO pin 2 から 60Hz の矩形波をデジタル出力する。
 
 ## ハードウェア
 
@@ -15,6 +16,7 @@ Teensy 4.1 上で動作する 8ch アナログデータロガー。
 | SPI バス   | LPSPI4 (SPI0) — SCK=13, MOSI=11, MISO=12, CS=10 |
 | CS 制御    | ハードウェア CS (LPSPI4_PCS0, pin 10 ALT3)      |
 | SPI モード | MODE1 (CPOL=0, CPHA=1), 5MHz                    |
+| 矩形波出力 | pin 2, 60Hz, PIT タイマーによるデジタルトグル   |
 
 ## ビルド環境
 
@@ -29,15 +31,20 @@ Teensy 4.1 上で動作する 8ch アナログデータロガー。
 ```
 firmware/
 ├── platformio.ini
+├── ARCHITECTURE.md          # 本ドキュメント
 ├── src/
-│   └── main.cpp            # エントリポイント (setup/loop)
+│   └── main.cpp             # エントリポイント (setup/loop)
+├── include/
+│   └── constants.h          # ピン番号・システム定数
 ├── lib/
 │   ├── ADS8688/
-│   │   └── ADS8688.h       # 低レベル SPI ドライバ (header-only)
-│   └── ADC/
-│       ├── ADC.h            # 高レベル ADC クラス
-│       └── ADC.cpp          # ADC クラス実装
-├── include/
+│   │   └── ADS8688.h        # 低レベル SPI ドライバ (header-only)
+│   ├── ADC/
+│   │   ├── ADC.h            # 高レベル ADC クラス
+│   │   └── ADC.cpp          # ADC クラス実装
+│   └── Pulse/
+│       ├── pulse.h          # 矩形波出力クラス
+│       └── pulse.cpp        # Pulse クラス実装
 └── test/
 ```
 
@@ -45,12 +52,26 @@ firmware/
 
 ```
 main.cpp
-  └── ADC クラス           (lib/ADC/)
-        └── ADS8688 クラス  (lib/ADS8688/)
-              └── LPSPI4 レジスタ (Teensy 4.x ハードウェア)
+  ├── constants.h            (include/)
+  ├── ADC クラス             (lib/ADC/)
+  │     └── ADS8688 クラス   (lib/ADS8688/)
+  │           └── LPSPI4 レジスタ (Teensy 4.x ハードウェア)
+  └── Pulse クラス           (lib/Pulse/)
+        └── PIT タイマー (IntervalTimer)
 ```
 
-### 1. ADS8688 クラス (`lib/ADS8688/ADS8688.h`)
+### 1. constants.h (`include/constants.h`)
+
+ピン番号やシステム定数を一元管理するヘッダ。
+
+- **`pin::ADC_CS`** — ADC チップセレクト (pin 10)
+- **`pin::SQUARE_WAVE`** — 矩形波出力 (pin 2)
+- **`config::SERIAL_BAUD`** — USB CDC ボーレート (115200)
+- **`config::SERIAL_WAIT_MS`** — Serial 接続待ちタイムアウト (3000ms)
+- **`config::ADC_SAMPLE_INTERVAL_US`** — ADC サンプリング間隔 (1000us = 1kHz)
+- **`config::SQUARE_WAVE_FREQ_HZ`** — 矩形波周波数 (60Hz)
+
+### 2. ADS8688 クラス (`lib/ADS8688/ADS8688.h`)
 
 ADS8688 の SPI 通信を直接扱う低レベルドライバ。Header-only。
 
@@ -62,7 +83,7 @@ ADS8688 の SPI 通信を直接扱う低レベルドライバ。Header-only。
 
 SPI 転送は LPSPI4 レジスタ (`IMXRT_LPSPI4_S`) を直接操作し、ハードウェア CS と可変フレームサイズ (24bit/32bit) を使用。
 
-### 2. ADC クラス (`lib/ADC/`)
+### 3. ADC クラス (`lib/ADC/`)
 
 ADS8688 を抽象化した高レベルインターフェース。
 
@@ -76,18 +97,36 @@ ADS8688 を抽象化した高レベルインターフェース。
 
 ISR コールバックには static メンバ + singleton パターンを使用。
 
-### 3. main.cpp (`src/main.cpp`)
+### 4. Pulse クラス (`lib/Pulse/`)
 
-ADC クラスのみを使用するシンプルなエントリポイント。ADS8688 の詳細には依存しない。
+PIT タイマー (IntervalTimer) による正確な矩形波デジタル出力。
+
+- **`Pulse(pin, freqHz)`** — 出力ピンと周波数を指定して構築
+- **`begin()`** — `pinMode` 設定 + PIT タイマー開始 (半周期ごとに `digitalToggleFast`)
+- **`stop()`** — タイマー停止、ピンを LOW に
+- **`setFrequency(freqHz)`** — 動作中に周波数を変更
+
+ISR コールバックには static メンバ + singleton パターンを使用。
+
+### 5. main.cpp (`src/main.cpp`)
+
+ADC / Pulse クラスと constants.h のみを使用するシンプルなエントリポイント。
 
 ```cpp
-ADC adc(SPI, 10);
+#include <ADC.h>
+#include <pulse.h>
+#include "constants.h"
+
+ADC adc(SPI, pin::ADC_CS);
+Pulse squareWave(pin::SQUARE_WAVE, config::SQUARE_WAVE_FREQ_HZ);
 
 void setup() {
+    Serial.begin(config::SERIAL_BAUD);
+    squareWave.begin();
     SPI.begin();
     adc.begin();
     adc.printCSVHeader(Serial);
-    adc.startSampling();  // 1kHz
+    adc.startSampling(config::ADC_SAMPLE_INTERVAL_US);
 }
 
 void loop() {
@@ -99,10 +138,11 @@ void loop() {
 
 ## データフロー
 
-1. `IntervalTimer` が 1kHz (1000us) で ISR を発火 → `_sampleFlag = true`
-2. `loop()` で `adc.available()` が true を検出
-3. `adc.read()` → ADS8688 の AUTO_RST モードで 8ch 分の SPI 転送
-4. `adc.printCSVLine()` → `snprintf` で CSV 行を構築、`Serial.write()` で USB CDC 出力
+1. `IntervalTimer` (PIT ch0) が 1kHz (1000us) で ISR を発火 → `_sampleFlag = true`
+2. `IntervalTimer` (PIT ch1) が 120Hz (8333us) で ISR を発火 → `digitalToggleFast` で 60Hz 矩形波生成
+3. `loop()` で `adc.available()` が true を検出
+4. `adc.read()` → ADS8688 の AUTO_RST モードで 8ch 分の SPI 転送
+5. `adc.printCSVLine()` → `snprintf` で CSV 行を構築、`Serial.write()` で USB CDC 出力
 
 ## 出力フォーマット (CSV)
 
@@ -120,3 +160,5 @@ time_us,ch0,ch1,ch2,ch3,ch4,ch5,ch6,ch7
 - SPI クロックは 5MHz（ADS8688 の最大 17MHz に対して十分なマージン）
 - `delayMicroseconds(2)` は各 SPI 転送後の CS 非アクティブ時間確保用
 - ADS8688 の生値は `readVal >> 1` で取得（データシートの bit alignment に対応）
+- Teensy 4.1 は PIT タイマーを 4 本持つ（ADC 用 + Pulse 用 で 2 本使用）
+- ピン番号・定数の変更は `include/constants.h` で一元管理

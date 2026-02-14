@@ -6,10 +6,17 @@ ADC *ADC::_instance = nullptr;
 ADC::ADC(SPIClass &spi, uint8_t csPin)
     : _dev(spi, csPin) {}
 
-void ADC::begin()
+void ADC::begin(uint8_t range)
 {
     _instance = this;
+    _range = range;
     _dev.begin();
+
+    // 全チャネルのレンジを設定
+    for (uint8_t i = 0; i < NUM_CHANNELS; i++)
+    {
+        _dev.writeRegister(ADS8688Reg::RANGE_CH0 + i, _range);
+    }
 }
 
 void ADC::startSampling(uint32_t intervalUs)
@@ -34,7 +41,7 @@ void ADC::read()
     _dev.readAllChannels(_raw);
 }
 
-int16_t ADC::rawValue(uint8_t ch) const
+uint16_t ADC::rawValue(uint8_t ch) const
 {
     if (ch >= NUM_CHANNELS)
         return 0;
@@ -45,7 +52,7 @@ float ADC::voltage(uint8_t ch) const
 {
     if (ch >= NUM_CHANNELS)
         return 0.0f;
-    return ADS8688::toVoltage(_raw[ch]);
+    return toVoltage(_raw[ch]);
 }
 
 void ADC::printCSVHeader(Print &out) const
@@ -66,7 +73,7 @@ void ADC::printCSVLine(Print &out, uint32_t timestampUs) const
 
     for (uint8_t ch = 0; ch < NUM_CHANNELS; ch++)
     {
-        float v = ADS8688::toVoltage(_raw[ch]);
+        float v = toVoltage(_raw[ch]);
         len += snprintf(buf + len, sizeof(buf) - len, ",%.4f", v);
     }
 
@@ -74,6 +81,45 @@ void ADC::printCSVLine(Print &out, uint32_t timestampUs) const
     buf[len] = '\0';
 
     out.write(buf, len);
+}
+
+// --- Voltage conversion ---
+float ADC::toVoltage(uint16_t raw) const
+{
+    // Full-scale voltage for each range setting
+    float fullScale;
+    switch (_range)
+    {
+    case ADS8688Range::BIPOLAR_2_5xVREF:
+        fullScale = 10.24f;
+        break; // ±10.24V
+    case ADS8688Range::BIPOLAR_1_25xVREF:
+        fullScale = 5.12f;
+        break; // ±5.12V
+    case ADS8688Range::BIPOLAR_0_625xVREF:
+        fullScale = 2.56f;
+        break; // ±2.56V
+    case ADS8688Range::UNIPOLAR_2_5xVREF:
+        fullScale = 10.24f;
+        break; // 0~10.24V
+    case ADS8688Range::UNIPOLAR_1_25xVREF:
+        fullScale = 5.12f;
+        break; // 0~5.12V
+    default:
+        fullScale = 10.24f;
+        break;
+    }
+
+    if (_range <= 0x02)
+    {
+        // Bipolar: offset binary (0x8000 = 0V)
+        return (static_cast<float>(raw) - 32768.0f) * (fullScale / 32768.0f);
+    }
+    else
+    {
+        // Unipolar: 0x0000 = 0V, 0xFFFF = full scale
+        return static_cast<float>(raw) * (fullScale / 65536.0f);
+    }
 }
 
 // --- ISR callback ---

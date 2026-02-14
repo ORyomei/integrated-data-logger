@@ -21,7 +21,8 @@ public:
     ADC(SPIClass &spi, uint8_t csPin);
 
     /// @brief 初期化 (SPI.begin() は呼び出し元で行うこと)
-    void begin();
+    /// @param range  ADS8688Range:: のレンジ定数 (デフォルト: BIPOLAR_2_5xVREF)
+    void begin(uint8_t range = ADS8688Range::BIPOLAR_2_5xVREF);
 
     /// @brief サンプリングタイマーを開始する
     /// @param intervalUs サンプリング間隔 [us] (デフォルト 1000 = 1kHz)
@@ -41,11 +42,11 @@ public:
     /// @brief 指定チャネルの生データを取得する
     /// @param ch チャネル番号 (0–7)
     /// @return 16bit 生値
-    int16_t rawValue(uint8_t ch) const;
+    uint16_t rawValue(uint8_t ch) const;
 
     /// @brief 指定チャネルの電圧値を取得する [V]
     /// @param ch チャネル番号 (0–7)
-    /// @return 電圧値 (±10.24V レンジ)
+    /// @return 電圧値 (現在のレンジに応じた変換)
     float voltage(uint8_t ch) const;
 
     /// @brief CSV ヘッダ行を出力する
@@ -60,8 +61,12 @@ public:
 private:
     ADS8688 _dev;
     IntervalTimer _timer;
-    int16_t _raw[NUM_CHANNELS] = {};
+    uint16_t _raw[NUM_CHANNELS] = {};
+    uint8_t _range = ADS8688Range::BIPOLAR_2_5xVREF;
     volatile bool _sampleFlag = false;
+
+    /// @brief 生値を電圧に変換する (現在のレンジに基づく)
+    float toVoltage(uint16_t raw) const;
 
     static ADC *_instance; // ISR コールバック用
     static void _onTimer();

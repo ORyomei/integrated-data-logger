@@ -73,11 +73,10 @@ main.cpp
 
 ### 2. ADS8688 クラス (`lib/ADS8688/ADS8688.h`)
 
-ADS8688 の SPI 通信を直接扱う低レベルドライバ。Header-only。
+ADS8688 の SPI 通信を直接扱う低レベルドライバ。Header-only。レンジ設定や電圧変換は行わず、生の uint16_t 値を返す。
 
-- **`begin()`** — ハードウェア CS 設定、全チャネルのレンジ設定、AUTO_RST モード開始
-- **`readAllChannels(int16_t raw[])`** — AUTO_RST モードで 8ch 一括読み取り
-- **`toVoltage(int16_t raw)`** — 生値→電圧変換 (static)
+- **`begin()`** — ハードウェア CS 設定、全チャネル電源オン、AUTO_RST モード開始（レンジ設定は行わない）
+- **`readAllChannels(uint16_t raw[])`** — AUTO_RST モードで 8ch 一括読み取り（オフセットバイナリ形式の uint16_t）
 - **`writeRegister(addr, value)`** — 24bit フレームでレジスタ書き込み (LPSPI4 直接制御)
 - **`transferCommand32(cmd)`** — 32bit コマンドフレーム送受信 (LPSPI4 直接制御)
 
@@ -85,16 +84,18 @@ SPI 転送は LPSPI4 レジスタ (`IMXRT_LPSPI4_S`) を直接操作し、ハー
 
 ### 3. ADC クラス (`lib/ADC/`)
 
-ADS8688 を抽象化した高レベルインターフェース。
+ADS8688 を抽象化した高レベルインターフェース。レンジ設定と電圧変換を担当。
 
-- **`begin()`** — ADS8688 初期化
+- **`begin(range)`** — ADS8688 初期化 + 全チャネルのレンジ設定 (デフォルト: BIPOLAR_2_5xVREF)
 - **`startSampling(intervalUs)`** — IntervalTimer で周期サンプリング開始 (デフォルト 1kHz)
 - **`stopSampling()`** — タイマー停止
 - **`available()`** — ISR フラグで新データの有無を返す
 - **`read()`** — 全チャネル読み取り (フラグクリア + readAllChannels)
-- **`voltage(ch)` / `rawValue(ch)`** — チャネル単位のデータ取得
+- **`voltage(ch)` / `rawValue(ch)`** — チャネル単位のデータ取得 (rawValue は uint16_t)
 - **`printCSVHeader(out)` / `printCSVLine(out, timestamp)`** — CSV 出力
+- **`toVoltage(raw)`** — オフセットバイナリの uint16_t → 電圧変換 (private, レンジ対応)
 
+電圧変換: ADS8688 の出力はオフセットバイナリ形式 (Bipolar: 0x8000=0V, Unipolar: 0x0000=0V)。
 ISR コールバックには static メンバ + singleton パターンを使用。
 
 ### 4. Pulse クラス (`lib/Pulse/`)
@@ -159,6 +160,7 @@ time_us,ch0,ch1,ch2,ch3,ch4,ch5,ch6,ch7
 - CS ピンは pin 10 固定（LPSPI4_PCS0 のハードウェアマッピング）
 - SPI クロックは 5MHz（ADS8688 の最大 17MHz に対して十分なマージン）
 - `delayMicroseconds(2)` は各 SPI 転送後の CS 非アクティブ時間確保用
-- ADS8688 の生値は `readVal >> 1` で取得（データシートの bit alignment に対応）
+- ADS8688 の生値はオフセットバイナリ形式の uint16_t（Bipolar: 0x8000=0V）
+- レンジ設定と電圧変換は ADC クラスが担当（ADS8688 クラスは生データのみ）
 - Teensy 4.1 は PIT タイマーを 4 本持つ（ADC 用 + Pulse 用 で 2 本使用）
 - ピン番号・定数の変更は `include/constants.h` で一元管理

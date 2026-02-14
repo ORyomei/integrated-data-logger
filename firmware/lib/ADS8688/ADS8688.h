@@ -45,6 +45,7 @@ public:
         : _spi(spi), _csPin(csPin) {}
 
     // Initialize: configures hardware CS (LPSPI4_PCS0) and ADS8688 registers
+    // Range 設定は呼び出し元 (ADC クラス) で行うこと
     void begin()
     {
         // Pin 10 = GPIO_B0_00 → ALT3 = LPSPI4_PCS0 (hardware CS)
@@ -53,21 +54,11 @@ public:
         // SPI_MODE1 (CPOL=0, CPHA=1), matching ESP32 code
         _spiSettings = SPISettings(5000000, MSBFIRST, SPI_MODE1);
 
-        // Set all 8 channels range
-        // ESP32: setReadRanges()
-        for (uint8_t i = 0; i < NUM_CHANNELS; i++)
-        {
-            writeRegister(ADS8688Reg::RANGE_CH0 + i,
-                          ADS8688Range::BIPOLAR_2_5xVREF);
-        }
-
         // Enable channels & power on
-        // ESP32: setReadChannels()
         writeRegister(ADS8688Reg::CH_PWR_DN, 0x00);   // Power on all
         writeRegister(ADS8688Reg::AUTO_SEQ_EN, 0xFF); // Enable all 8ch
 
         // Enter AUTO_RST mode
-        // ESP32: setReadModeAutoSeq()
         transferCommand32(ADS8688Cmd::AUTO_RST);
     }
 
@@ -75,23 +66,17 @@ public:
     // Matches ESP32 read() exactly:
     //   - N-1 channels with NO_OP
     //   - Last channel with AUTO_RST to restart sequence
-    void readAllChannels(int16_t raw[NUM_CHANNELS])
+    void readAllChannels(uint16_t raw[NUM_CHANNELS])
     {
         uint32_t readVal;
         for (uint8_t i = 0; i < NUM_CHANNELS - 1; i++)
         {
             readVal = transferCommand32(ADS8688Cmd::NO_OP);
-            raw[i] = static_cast<int16_t>(readVal >> 1);
+            raw[i] = static_cast<uint16_t>(readVal);
         }
         // Last channel: send AUTO_RST to restart sequence
         readVal = transferCommand32(ADS8688Cmd::AUTO_RST);
-        raw[NUM_CHANNELS - 1] = static_cast<int16_t>(readVal >> 1);
-    }
-
-    // Convert raw 16-bit value to voltage for ±10.24V range
-    static float toVoltage(int16_t raw)
-    {
-        return static_cast<float>(raw) * (10.24f / 32768.0f);
+        raw[NUM_CHANNELS - 1] = static_cast<uint16_t>(readVal);
     }
 
     // Write to a program register (24-bit frame, hardware CS)

@@ -1,29 +1,42 @@
-/*
- * Overlay for Teensy 4.1 - USB CDC + GPIO + SPI
- */
-
 / {
+    aliases {
+        spi-ads8688 = &ads8688;
+        usb-data-uart = &cdc_acm_uart0;
+    };
+
     chosen {
-        zephyr,console = &cdc_acm_uart0;
+        zephyr,console = &lpuart1;
+        zephyr,shell-uart = &lpuart1;
     };
 };
 
-/* 60Hz GPIO output pin */
-&gpio2 {
-    status = "okay";
-};
-
-/* SPI for ADS8688 */
+/* SPI (LPSPI4) + ADS8688 */
 &lpspi4 {
     status = "okay";
     pinctrl-0 = <&pinmux_lpspi4>;
     pinctrl-names = "default";
-    cs-gpios = <&gpio3 0 GPIO_ACTIVE_LOW>;
+
+// 参考)  zephyr/dts/bindings/spi/spi-device.yaml
+    /* ハードCS(PCS0)を使う想定：cs-gpiosは書かない */
+    ads8688: ads8688@0 {
+        compatible = "zephyr,spi-device";
+        reg = <0>;
+        spi-max-frequency = <20000000>;
+        duplex = <0>;
+        status = "okay";
+        spi-interframe-delay-ns = <0>;
+        frame-format = <0>;
+    };
 };
 
-/* USB CDC ACM */
+&lpuart1 {
+    status = "okay";
+    current-speed = <115200>;
+};
+
 &zephyr_udc0 {
     cdc_acm_uart0: cdc_acm_uart0 {
         compatible = "zephyr,cdc-acm-uart";
+        status = "okay";
     };
 };

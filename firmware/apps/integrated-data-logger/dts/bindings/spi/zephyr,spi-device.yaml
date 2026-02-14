@@ -1,0 +1,3 @@
+description: Zephyr generic SPI device (project-local helper binding)
+compatible: "zephyr,spi-device"
+include: [spi-device.yaml]

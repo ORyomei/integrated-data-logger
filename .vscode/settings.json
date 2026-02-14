@@ -1,3 +1,4 @@
 {
     "clangd.arguments": ["--compile-commands-dir=firmware/build"],
+    "devicetree.zephyr": "firmware/zephyr"
 }

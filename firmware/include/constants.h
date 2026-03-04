@@ -10,8 +10,10 @@ namespace pin
 {
     constexpr uint8_t ADC_CS = 10; // LPSPI4_PCS0 (hardware CS)
 
-    // 矩形波出力
-    constexpr uint8_t SQUARE_WAVE = 2;
+    // 矩形波出力 (FlexPWM 対応ピン, サブモジュール別)
+    constexpr uint8_t PULSE_0 = 2; // FlexPWM4 SM2
+    constexpr uint8_t PULSE_1 = 4; // FlexPWM2 SM0
+    constexpr uint8_t PULSE_2 = 6; // FlexPWM2 SM2
 }
 
 namespace config
@@ -24,5 +26,7 @@ namespace config
     constexpr uint32_t ADC_SAMPLE_INTERVAL_US = 1000; // 1kHz
 
     // 矩形波出力
-    constexpr float SQUARE_WAVE_FREQ_HZ = 60.0f;
+    constexpr float PULSE_0_FREQ_HZ = 60.0f;  // ch0: 60Hz
+    constexpr float PULSE_1_FREQ_HZ = 50.0f;  // ch1: 50Hz
+    constexpr float PULSE_2_FREQ_HZ = 100.0f; // ch2: 100Hz
 }

@@ -7,11 +7,13 @@
 // ============================================================
 // Teensy 4.1 + ADS8688 Data Logger
 // 8ch ±10V analog input @ 1kHz → USB CDC output
-// 60Hz square wave output on GPIO
+// 3ch square wave output on GPIO (FlexPWM)
 // ============================================================
 
 ADC adc(SPI, pin::ADC_CS);
-Pulse squareWave(pin::SQUARE_WAVE, config::SQUARE_WAVE_FREQ_HZ);
+Pulse pulse0(pin::PULSE_0, config::PULSE_0_FREQ_HZ);
+Pulse pulse1(pin::PULSE_1, config::PULSE_1_FREQ_HZ);
+Pulse pulse2(pin::PULSE_2, config::PULSE_2_FREQ_HZ);
 
 void setup()
 {
@@ -22,7 +24,9 @@ void setup()
   {
   }
 
-  squareWave.begin();
+  pulse0.begin();
+  pulse1.begin();
+  pulse2.begin();
 
   SPI.begin();
   adc.begin();

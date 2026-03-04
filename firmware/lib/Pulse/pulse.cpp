@@ -1,33 +1,29 @@
 #include "pulse.h"
 
-Pulse *Pulse::_instance = nullptr;
-
 Pulse::Pulse(uint8_t pin, float freqHz)
     : _pin(pin), _freqHz(freqHz) {}
 
 void Pulse::begin()
 {
-    _instance = this;
-    pinMode(_pin, OUTPUT);
-    digitalWriteFast(_pin, LOW);
-    // トグル周波数 = 2 × freqHz → 半周期 = 1000000 / (2 * freqHz) us
-    _timer.begin(_onToggle, 1000000.0 / (2.0 * _freqHz));
+    analogWriteFrequency(_pin, _freqHz);
+    analogWrite(_pin, 128); // 50% duty
+    _running = true;
 }
 
 void Pulse::stop()
 {
-    _timer.end();
+    analogWrite(_pin, 0);
+    pinMode(_pin, OUTPUT);
     digitalWriteFast(_pin, LOW);
+    _running = false;
 }
 
 void Pulse::setFrequency(float freqHz)
 {
     _freqHz = freqHz;
-    _timer.update(1000000.0 / (2.0 * _freqHz));
-}
-
-void Pulse::_onToggle()
-{
-    if (_instance)
-        digitalToggleFast(_instance->_pin);
+    analogWriteFrequency(_pin, _freqHz);
+    if (_running)
+    {
+        analogWrite(_pin, 128); // 周波数変更後に duty を再設定
+    }
 }

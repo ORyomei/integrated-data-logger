@@ -3,18 +3,19 @@
 #include <Arduino.h>
 
 // ============================================================
-// Pulse - PIT タイマーによる正確な矩形波デジタル出力
+// Pulse - FlexPWM ハードウェアによる正確な矩形波デジタル出力
+// 複数インスタンスが独立動作可能 (CPU 介入なし, ジッターゼロ)
 // ============================================================
 
 class Pulse
 {
 public:
     /// @brief コンストラクタ
-    /// @param pin      出力 GPIO ピン
+    /// @param pin      出力 GPIO ピン (FlexPWM 対応ピンであること)
     /// @param freqHz   周波数 [Hz]
     Pulse(uint8_t pin, float freqHz);
 
-    /// @brief 出力開始
+    /// @brief 出力開始 (50% duty の矩形波)
     void begin();
 
     /// @brief 出力停止 (ピンを LOW にする)
@@ -27,8 +28,5 @@ public:
 private:
     uint8_t _pin;
     float _freqHz;
-    IntervalTimer _timer;
-
-    static Pulse *_instance;
-    static void _onToggle();
+    bool _running = false;
 };
